@@ -8,7 +8,13 @@
  * @flow
  */
 
-import type { ImageProps } from './types';
+import type { ImageResult, ImageSource } from '../../modules/ImageLoader';
+import type {
+  ImageLoadingProps,
+  ImageProps,
+  Source,
+  SourceState
+} from './types';
 
 import * as React from 'react';
 import createElement from '../createElement';
@@ -94,56 +100,105 @@ function getFlatStyle(style, blurRadius, filterId) {
   return [flatStyle, resizeMode, _filter, tintColor];
 }
 
-function resolveAssetDimensions(source) {
-  if (typeof source === 'number') {
-    const { height, width } = getAssetByID(source);
-    return { height, width };
-  } else if (
-    source != null &&
-    !Array.isArray(source) &&
-    typeof source === 'object'
-  ) {
-    const { height, width } = source;
-    return { height, width };
-  }
+function resolveAssetDimensions(source: ImageSource) {
+  const { height, width } = source;
+  return { height, width };
 }
 
-function resolveAssetUri(source): ?string {
-  let uri = null;
+function resolveSource(source: ?Source): ImageSource {
+  let resolvedSource = { uri: '' };
+
   if (typeof source === 'number') {
-    // get the URI from the packager
-    const asset = getAssetByID(source);
-    let scale = asset.scales[0];
-    if (asset.scales.length > 1) {
-      const preferredScale = PixelRatio.get();
-      // Get the scale which is closest to the preferred scale
-      scale = asset.scales.reduce((prev, curr) =>
-        Math.abs(curr - preferredScale) < Math.abs(prev - preferredScale)
-          ? curr
-          : prev
+    resolvedSource = resolveNumericSource(source);
+  } else if (typeof source === 'string') {
+    resolvedSource = resolveStringSource(source);
+  } else if (Array.isArray(source)) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        'The <Image> component does not support multiple sources passed as array, falling back to the first source in the list',
+        { source }
       );
     }
-    const scaleSuffix = scale !== 1 ? `@${scale}x` : '';
-    uri = asset
-      ? `${asset.httpServerLocation}/${asset.name}${scaleSuffix}.${asset.type}`
-      : '';
-  } else if (typeof source === 'string') {
-    uri = source;
+
+    return resolveSource(source[0]);
   } else if (source && typeof source.uri === 'string') {
-    uri = source.uri;
+    resolvedSource = resolveObjectSource(source);
   }
 
-  if (uri) {
-    const match = uri.match(svgDataUriPattern);
-    // inline SVG markup may contain characters (e.g., #, ") that need to be escaped
+  if (resolvedSource.uri) {
+    const match = resolvedSource.uri.match(svgDataUriPattern);
     if (match) {
-      const [, prefix, svg] = match;
-      const encodedSvg = encodeURIComponent(svg);
-      return `${prefix}${encodedSvg}`;
+      resolvedSource = resolveSvgDataUriSource(resolvedSource, match);
     }
   }
 
-  return uri;
+  return resolvedSource;
+}
+
+// get the URI from the packager
+function resolveNumericSource(source: number): ImageSource {
+  const asset = getAssetByID(source);
+  if (asset == null) {
+    throw new Error(
+      `Image: asset with ID "${source}" could not be found. Please check the image source or packager.`
+    );
+  }
+  let scale = asset.scales[0];
+  if (asset.scales.length > 1) {
+    const preferredScale = PixelRatio.get();
+    // Get the scale which is closest to the preferred scale
+    scale = asset.scales.reduce((prev, curr) =>
+      Math.abs(curr - preferredScale) < Math.abs(prev - preferredScale)
+        ? curr
+        : prev
+    );
+  }
+
+  const scaleSuffix = scale !== 1 ? `@${scale}x` : '';
+  const uri = `${asset.httpServerLocation}/${asset.name}${scaleSuffix}.${asset.type}`;
+  const { height, width } = asset;
+
+  return { uri, height, width };
+}
+
+function resolveStringSource(source: string): ImageSource {
+  return { uri: source };
+}
+
+function resolveObjectSource(source: Object): ImageSource {
+  return (source: ImageSource);
+}
+
+function resolveSvgDataUriSource(
+  source: Object,
+  match: Array<string>
+): ImageSource {
+  const [, prefix, svg] = match;
+  // inline SVG markup may contain characters (e.g., #, ") that need to be escaped
+  const encodedSvg = encodeURIComponent(svg);
+
+  return {
+    ...source,
+    uri: `${prefix}${encodedSvg}`
+  };
+}
+
+// resolve any URI that might have a local blob URL created with `createObjectURL`
+function resolveBlobUri(source: ImageSource): string {
+  return ImageLoader.resolveBlobUri(source.uri);
+}
+
+function getSourceToDisplay(main: SourceState, fallback: SourceState) {
+  if (main.status === LOADED) return main.source;
+
+  // If there's no fallback URI, it's safe to use the main source URI
+  if (main.status === LOADING && !fallback.source.uri) {
+    // But it should not be used when the image would be loaded with custom headers
+    // Because the actual URI is only set (as a local blob url) after loading
+    if (!main.source.headers) return main.source;
+  }
+
+  return fallback.source;
 }
 
 interface ImageStatics {
@@ -186,33 +241,24 @@ const Image: React.AbstractComponent<
     }
   }
 
-  const [state, updateState] = React.useState(() => {
-    const uri = resolveAssetUri(source);
-    if (uri != null) {
-      const isLoaded = ImageLoader.has(uri);
-      if (isLoaded) {
-        return LOADED;
-      }
-    }
-    return IDLE;
-  });
+  const imageLoadingProps = { onLoad, onLoadStart, onLoadEnd, onError };
+
+  const fallbackSource = useSource(imageLoadingProps, defaultSource);
+  const mainSource = useSource(imageLoadingProps, source);
+  const availableSource = getSourceToDisplay(mainSource, fallbackSource);
+  const displayImageUri = resolveBlobUri(availableSource);
+  const imageSizeStyle = resolveAssetDimensions(availableSource);
 
   const [layout, updateLayout] = React.useState({});
   const hasTextAncestor = React.useContext(TextAncestorContext);
   const hiddenImageRef = React.useRef(null);
   const filterRef = React.useRef(_filterId++);
-  const requestRef = React.useRef(null);
-  const shouldDisplaySource =
-    state === LOADED || (state === LOADING && defaultSource == null);
   const [flatStyle, _resizeMode, filter, tintColor] = getFlatStyle(
     style,
     blurRadius,
     filterRef.current
   );
   const resizeMode = props.resizeMode || _resizeMode || 'cover';
-  const selectedSource = shouldDisplaySource ? source : defaultSource;
-  const displayImageUri = resolveAssetUri(selectedSource);
-  const imageSizeStyle = resolveAssetDimensions(selectedSource);
   const backgroundImage = displayImageUri ? `url("${displayImageUri}")` : null;
   const backgroundSize = getBackgroundSize();
 
@@ -254,54 +300,6 @@ const Image: React.AbstractComponent<
       updateLayout(layout);
     }
   }
-
-  // Image loading
-  const uri = resolveAssetUri(source);
-  React.useEffect(() => {
-    abortPendingRequest();
-
-    if (uri != null) {
-      updateState(LOADING);
-      if (onLoadStart) {
-        onLoadStart();
-      }
-
-      requestRef.current = ImageLoader.load(
-        uri,
-        function load(e) {
-          updateState(LOADED);
-          if (onLoad) {
-            onLoad(e);
-          }
-          if (onLoadEnd) {
-            onLoadEnd();
-          }
-        },
-        function error() {
-          updateState(ERRORED);
-          if (onError) {
-            onError({
-              nativeEvent: {
-                error: `Failed to load resource ${uri} (404)`
-              }
-            });
-          }
-          if (onLoadEnd) {
-            onLoadEnd();
-          }
-        }
-      );
-    }
-
-    function abortPendingRequest() {
-      if (requestRef.current != null) {
-        ImageLoader.abort(requestRef.current);
-        requestRef.current = null;
-      }
-    }
-
-    return abortPendingRequest;
-  }, [uri, requestRef, updateState, onError, onLoad, onLoadEnd, onLoadStart]);
 
   return (
     <View
@@ -351,6 +349,87 @@ ImageWithStatics.prefetch = function (uri) {
 
 ImageWithStatics.queryCache = function (uris) {
   return ImageLoader.queryCache(uris);
+};
+
+/**
+ * Image loading/state management hook
+ */
+const useSource = (
+  callbacks: ImageLoadingProps,
+  source: ?Source
+): SourceState => {
+  const [resolvedSource, setResolvedSource] = React.useState<ImageSource>(() =>
+    resolveSource(source)
+  );
+
+  const [status, setStatus] = React.useState(() =>
+    ImageLoader.has(resolveSource.uri) ? LOADED : IDLE
+  );
+
+  const [result, setResult] = React.useState<ImageSource>(resolvedSource);
+
+  // Trigger a resolved source change when necessary
+  React.useEffect(() => {
+    const nextSource = resolveSource(source);
+    setResolvedSource((prevSource) => {
+      // Prevent triggering a state change if the next is virtually the same as the last loaded source
+      if (JSON.stringify(nextSource) === JSON.stringify(prevSource)) {
+        return prevSource;
+      }
+
+      return nextSource;
+    });
+  }, [source]);
+
+  // Always use the latest value of any callback passed
+  // Keeping a ref we avoid (re)triggering the load effect just because a callback changed
+  // (E.g. we don't want to trigger a new load because the `onLoad` prop changed)
+  const callbackRefs = React.useRef(callbacks);
+  callbackRefs.current = callbacks;
+
+  // Start loading new source on resolved source change
+  // Beware of changing the hook inputs array - this effect relies on running only when the resolved source changes
+  // If you have to change the code, modify it in a way to preserve the intended behavior
+  React.useEffect(() => {
+    if (!resolvedSource.uri) {
+      setStatus(IDLE);
+      setResult(resolvedSource);
+      return;
+    }
+
+    const { onLoad, onLoadStart, onLoadEnd, onError } = callbackRefs.current;
+    function handleLoad(result: ImageResult) {
+      if (onLoad) onLoad({ nativeEvent: result });
+      if (onLoadEnd) onLoadEnd();
+
+      setStatus(LOADED);
+      setResult({ ...resolvedSource, ...result.source });
+    }
+
+    function handleError() {
+      if (onError) {
+        onError({
+          nativeEvent: {
+            error: `Failed to load resource ${resolvedSource.uri} (404)`
+          }
+        });
+      }
+
+      if (onLoadEnd) onLoadEnd();
+
+      setStatus(ERRORED);
+    }
+
+    if (onLoadStart) onLoadStart();
+
+    setStatus(LOADING);
+    const requestId = ImageLoader.load(resolvedSource, handleLoad, handleError);
+
+    // Release resources on umount or after starting a new request
+    return () => ImageLoader.release(requestId);
+  }, [resolvedSource]);
+
+  return { status, source: result };
 };
 
 const styles = StyleSheet.create({
