@@ -21,6 +21,11 @@ describe('components/Image', () => {
   beforeEach(() => {
     ImageUriCache._entries = {};
     window.Image = jest.fn(() => ({}));
+    ImageLoader.load = jest
+      .fn()
+      .mockImplementation((source, onLoad, onError) => {
+        onLoad({ source });
+      });
   });
 
   afterEach(() => {
@@ -107,9 +112,6 @@ describe('components/Image', () => {
   describe('prop "onLoad"', () => {
     test('is called after image is loaded from network', () => {
       jest.useFakeTimers();
-      ImageLoader.load = jest.fn().mockImplementation((_, onLoad, onError) => {
-        onLoad();
-      });
       const onLoadStartStub = jest.fn();
       const onLoadStub = jest.fn();
       const onLoadEndStub = jest.fn();
@@ -127,9 +129,6 @@ describe('components/Image', () => {
 
     test('is called after image is loaded from cache', () => {
       jest.useFakeTimers();
-      ImageLoader.load = jest.fn().mockImplementation((_, onLoad, onError) => {
-        onLoad();
-      });
       const onLoadStartStub = jest.fn();
       const onLoadStub = jest.fn();
       const onLoadEndStub = jest.fn();
@@ -167,6 +166,38 @@ describe('components/Image', () => {
             onLoadEnd={onLoadEndStub}
             onLoadStart={onLoadStartStub}
             source={'https://blah.com/img.png'}
+          />
+        );
+      });
+      expect(onLoadStub.mock.calls.length).toBe(2);
+      expect(onLoadEndStub.mock.calls.length).toBe(2);
+    });
+
+    test('is called on update if "headers" are modified', () => {
+      const onLoadStartStub = jest.fn();
+      const onLoadStub = jest.fn();
+      const onLoadEndStub = jest.fn();
+      const { rerender } = render(
+        <Image
+          onLoad={onLoadStub}
+          onLoadEnd={onLoadEndStub}
+          onLoadStart={onLoadStartStub}
+          source={{
+            uri: 'https://test.com/img.jpg',
+            headers: { 'x-custom-header': 'abc123' }
+          }}
+        />
+      );
+      act(() => {
+        rerender(
+          <Image
+            onLoad={onLoadStub}
+            onLoadEnd={onLoadEndStub}
+            onLoadStart={onLoadStartStub}
+            source={{
+              uri: 'https://test.com/img.jpg',
+              headers: { 'x-custom-header': '123abc' }
+            }}
           />
         );
       });
@@ -225,6 +256,44 @@ describe('components/Image', () => {
       expect(onLoadStub.mock.calls.length).toBe(1);
       expect(onLoadEndStub.mock.calls.length).toBe(1);
     });
+
+    // This test verifies that wen source is declared in-line and the parent component
+    // re-renders we aren't restarting the load process because the source is structurally equal
+    test('is not called on update when "headers" and "uri" are not modified', () => {
+      const onLoadStartStub = jest.fn();
+      const onLoadStub = jest.fn();
+      const onLoadEndStub = jest.fn();
+      const { rerender } = render(
+        <Image
+          onLoad={onLoadStub}
+          onLoadEnd={onLoadEndStub}
+          onLoadStart={onLoadStartStub}
+          source={{
+            uri: 'https://test.com/img.jpg',
+            width: 1,
+            height: 1,
+            headers: { 'x-custom-header': 'abc123' }
+          }}
+        />
+      );
+      act(() => {
+        rerender(
+          <Image
+            onLoad={onLoadStub}
+            onLoadEnd={onLoadEndStub}
+            onLoadStart={onLoadStartStub}
+            source={{
+              uri: 'https://test.com/img.jpg',
+              width: 1,
+              height: 1,
+              headers: { 'x-custom-header': 'abc123' }
+            }}
+          />
+        );
+      });
+      expect(onLoadStub.mock.calls.length).toBe(1);
+      expect(onLoadEndStub.mock.calls.length).toBe(1);
+    });
   });
 
   describe('prop "resizeMode"', () => {
@@ -244,8 +313,10 @@ describe('components/Image', () => {
         null,
         '',
         {},
+        [],
         { uri: '' },
-        { uri: 'https://google.com' }
+        { uri: 'https://google.com' },
+        { uri: 'https://google.com', headers: { 'x-custom-header': 'abc123' } }
       ];
       sources.forEach((source) => {
         expect(() => render(<Image source={source} />)).not.toThrow();
@@ -261,11 +332,6 @@ describe('components/Image', () => {
 
     test('is set immediately if the image was preloaded', () => {
       const uri = 'https://yahoo.com/favicon.ico';
-      ImageLoader.load = jest
-        .fn()
-        .mockImplementationOnce((_, onLoad, onError) => {
-          onLoad();
-        });
       return Image.prefetch(uri).then(() => {
         const source = { uri };
         const { container } = render(<Image source={source} />, {
@@ -308,19 +374,32 @@ describe('components/Image', () => {
     test('is correctly updated only when loaded if defaultSource provided', () => {
       const defaultUri = 'https://testing.com/preview.jpg';
       const uri = 'https://testing.com/fullSize.jpg';
-      let loadCallback;
-      ImageLoader.load = jest
-        .fn()
-        .mockImplementationOnce((_, onLoad, onError) => {
-          loadCallback = onLoad;
-        });
+      const calls = [];
+
+      // Capture calls and resolve them after render
+      ImageLoader.load = jest.fn().mockImplementation((source, onLoad) => {
+        calls.push({ source, onLoad });
+      });
+
       const { container } = render(
         <Image defaultSource={{ uri: defaultUri }} source={{ uri }} />
       );
-      expect(container.firstChild).toMatchSnapshot();
+
+      // Both defaultSource and source are loaded at the same time
+      // But we assume defaultSource is loaded quicker
       act(() => {
-        loadCallback();
+        const call = calls.find(({ source }) => source.uri === defaultUri);
+        call.onLoad({ source: call.source });
       });
+
+      expect(container.firstChild).toMatchSnapshot();
+
+      // After a while the main source loads as well
+      act(() => {
+        const call = calls.find(({ source }) => source.uri === uri);
+        call.onLoad({ source: call.source });
+      });
+
       expect(container.firstChild).toMatchSnapshot();
     });
 
@@ -345,6 +424,67 @@ describe('components/Image', () => {
       expect(container.querySelector('img').src).toBe(
         'http://localhost/static/img@2x.png'
       );
+    });
+
+    test('it correctly passes headers to ImageLoader', () => {
+      const uri = 'https://google.com/favicon.ico';
+      const headers = { 'x-custom-header': 'abc123' };
+      const source = { uri, headers };
+      render(<Image source={source} />);
+
+      expect(ImageLoader.load).toHaveBeenCalledWith(
+        expect.objectContaining({ headers }),
+        expect.any(Function),
+        expect.any(Function)
+      );
+    });
+
+    test('it correctly passes uri to ImageLoader', () => {
+      const uri = 'https://google.com/favicon.ico';
+      const source = { uri };
+      render(<Image source={source} />);
+
+      expect(ImageLoader.load).toHaveBeenCalledWith(
+        expect.objectContaining({ uri }),
+        expect.any(Function),
+        expect.any(Function)
+      );
+    });
+
+    // A common case is `source` declared as an inline object, which cause is to be a
+    // new object (with the same content) each time parent component renders
+    test('it still loads the image if source object is changed', () => {
+      ImageLoader.load.mockImplementation(() => {});
+
+      const releaseSpy = jest.spyOn(ImageLoader, 'release');
+
+      const uri = 'https://google.com/favicon.ico';
+      const { rerender } = render(<Image source={{ uri }} />);
+      rerender(<Image source={{ uri }} />);
+
+      // when the underlying source didn't change we expect the initial request is not cancelled due to re-render
+      expect(releaseSpy).not.toHaveBeenCalled();
+    });
+
+    test('falls back to default source when source or source.uri is removed', () => {
+      const source = { uri: 'https://google.com/favicon.ico' };
+      const defaultSource = { uri: 'http://localhost/static/img@2x.png' };
+
+      const { container, rerender } = render(
+        <Image defaultSource={defaultSource} source={source} />
+      );
+
+      rerender(<Image defaultSource={defaultSource} source={{ uri: '' }} />);
+      expect(container.querySelector('img').src).toBe(defaultSource.uri);
+    });
+
+    test('removes image if source or source.uri is removed and there is no default source', () => {
+      const source = { uri: 'https://google.com/favicon.ico' };
+
+      const { container, rerender } = render(<Image source={source} />);
+
+      rerender(<Image source={{ uri: '' }} />);
+      expect(container.querySelector('img')).toBe(null);
     });
   });
 
