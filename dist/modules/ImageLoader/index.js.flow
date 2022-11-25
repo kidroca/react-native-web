@@ -1,0 +1,133 @@
+/**
+ * Copyright (c) Nicolas Gallagher.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ * @flow
+ */
+const dataUriPattern = /^data:/;
+declare export class ImageUriCache {
+  static _maximumEntries: number,
+  static _entries: any,
+  static has(uri: string): boolean,
+  static add(uri: string): any,
+  static remove(uri: string): any,
+  static _cleanUpIfNeeded(): any,
+}
+let id = 0;
+const requests = {};
+const ImageLoader = {
+  clear(requestId: number) {
+    const image = requests[`${requestId}`];
+
+    if (image) {
+      image.onerror = null;
+      image.onload = null;
+      ImageUriCache.remove(image.src);
+      image.src = '';
+      delete requests[`${requestId}`];
+    }
+  },
+
+  getSize(uri: string, success: (width: number, height: number) => void, failure: () => void) {
+    let complete = false;
+    const interval = setInterval(callback, 16);
+    const requestId = ImageLoader.load(uri, callback, errorCallback);
+    declare function callback(): any;
+    declare function errorCallback(): any;
+  },
+
+  has(uri: string): boolean {
+    return ImageUriCache.has(uri);
+  },
+
+  load(uri: string, onLoad: Function, onError: Function): number {
+    id += 1;
+    const image = new window.Image();
+    image.onerror = onError;
+
+    image.onload = nativeEvent => {
+      ImageUriCache.add(uri); // avoid blocking the main thread
+
+      declare var onDecode: () => any;
+
+      if (typeof image.decode === 'function') {
+        // Safari currently throws exceptions when decoding svgs.
+        // We want to catch that error and allow the load handler
+        // to be forwarded to the onLoad handler in this case
+        image.decode().then(onDecode, onDecode);
+      } else {
+        setTimeout(onDecode, 0);
+      }
+    };
+
+    image.src = uri;
+    requests[`${id}`] = image;
+    return id;
+  },
+
+  loadWithHeaders(source: ImageSource): LoadRequest {
+    let uri: string;
+    const abortController = new AbortController();
+    const request = new Request(source.uri, {
+      headers: source.headers,
+      signal: abortController.signal
+    });
+    request.headers.append('accept', 'image/*');
+    const promise = fetch(request).then(response => response.blob()).then(blob => {
+      uri = URL.createObjectURL(blob);
+      return uri;
+    }).catch(error => {
+      if (error.name === 'AbortError') {
+        return '';
+      }
+
+      throw error;
+    });
+    return {
+      promise,
+      source,
+      cancel: () => {
+        abortController.abort();
+        URL.revokeObjectURL(uri);
+      }
+    };
+  },
+
+  prefetch(uri: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      ImageLoader.load(uri, () => {
+        // load() adds the uri to the cache so it can be immediately displayed when used,
+        // but we also immediately remove it to correctly reflect that it has no active references
+        ImageUriCache.remove(uri);
+        resolve();
+      }, reject);
+    });
+  },
+
+  queryCache(uris: Array<string>): Promise<{|
+    [uri: string]: 'disk/memory'
+  |}> {
+    const result = {};
+    uris.forEach(u => {
+      if (ImageUriCache.has(u)) {
+        result[u] = 'disk/memory';
+      }
+    });
+    return Promise.resolve(result);
+  }
+
+};
+export type LoadRequest = {|
+  cancel: Function,
+  source: ImageSource,
+  promise: Promise<string>,
+|};
+export type ImageSource = {
+  uri: string,
+  headers: {
+    [key: string]: string
+  },
+};
+export default ImageLoader;
