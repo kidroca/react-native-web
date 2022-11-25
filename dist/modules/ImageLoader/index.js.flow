@@ -1,0 +1,132 @@
+/**
+ * Copyright (c) Nicolas Gallagher.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ * @flow
+ */
+import type { ImageSource, ImageResult } from './types';
+const dataUriPattern = /^data:/;
+declare export class ImageUriCache {
+  static _maximumEntries: number,
+  static _entries: any,
+  static has(uri: ?string): boolean,
+  static add(uri: string): any,
+  static remove(uri: string): any,
+  static _cleanUpIfNeeded(): any,
+}
+let id = 0;
+const requests = {};
+const ImageLoader = {
+  release(requestId: number) {
+    const request = requests[requestId];
+
+    if (request) {
+      const {
+        image,
+        cleanup,
+        source
+      } = request;
+      if (cleanup) cleanup();
+      image.onerror = null;
+      image.onload = null;
+      image.src = '';
+      ImageUriCache.remove(source.uri);
+      delete requests[requestId];
+    }
+  },
+
+  getSize(uri: string, success: (width: number, height: number) => void, failure: () => void) {
+    let complete = false;
+    const interval = setInterval(callback, 16);
+    const requestId = ImageLoader.load({
+      uri
+    }, callback, errorCallback);
+    declare function callback(): any;
+    declare function errorCallback(): any;
+  },
+
+  has(uri: ?string): boolean {
+    return ImageUriCache.has(uri);
+  },
+
+  load(source: ImageSource, onLoad: (ImageResult) => void, onError: Function): number {
+    id += 1;
+    const image = new window.Image();
+    declare var handleLoad: () => any;
+    image.onerror = onError;
+    image.onload = handleLoad;
+    requests[id] = {
+      image,
+      source
+    }; // When headers are supplied we can't load the image through `image.src`, but we `fetch` it as an AJAX request
+
+    if (source.headers) {
+      const abortCtrl = new AbortController();
+      const request = new Request(source.uri, {
+        headers: source.headers,
+        signal: abortCtrl.signal
+      });
+      request.headers.append('accept', 'image/*');
+
+      requests[id].cleanup = () => {
+        abortCtrl.abort();
+        URL.revokeObjectURL(image.src);
+      };
+
+      fetch(request).then(response => response.blob()).then(blob => {
+        image.src = URL.createObjectURL(blob);
+      }).catch(error => {
+        if (error.name !== 'AbortError') onError(error);
+      });
+    } else {
+      // For simple request we load the image through `image.src` because it has wider support
+      // like better cross-origin support and progressive loading
+      image.src = source.uri;
+    }
+
+    return id;
+  },
+
+  prefetch(uri: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      ImageLoader.load({
+        uri
+      }, () => {
+        // Add the uri to the cache so it can be immediately displayed when used
+        // but also immediately remove it to correctly reflect that it has no active references
+        ImageUriCache.add(uri);
+        ImageUriCache.remove(uri);
+        resolve();
+      }, reject);
+    });
+  },
+
+  queryCache(uris: Array<string>): Promise<{|
+    [uri: string]: 'disk/memory'
+  |}> {
+    const result = {};
+    uris.forEach(u => {
+      if (ImageUriCache.has(u)) {
+        result[u] = 'disk/memory';
+      }
+    });
+    return Promise.resolve(result);
+  },
+
+  resolveBlobUri(uri: string): string {
+    for (const key in requests) {
+      const request = requests[key];
+
+      if (request.source.uri === uri) {
+        return request.image.src;
+      }
+    }
+
+    return uri;
+  }
+
+};
+export { ImageSource, ImageResult } from './types';
+export default ImageLoader;
