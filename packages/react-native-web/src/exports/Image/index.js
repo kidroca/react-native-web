@@ -212,10 +212,12 @@ const Image: React.AbstractComponent<
     }
   }
 
-  const imageLoadingProps = { onLoad, onLoadStart, onLoadEnd, onError };
-
-  const fallbackSource = useSource(imageLoadingProps, defaultSource);
-  const mainSource = useSource(imageLoadingProps, source);
+  // Don't raise load events from the fallback source
+  const fallbackSource = useSource({ onError }, defaultSource);
+  const mainSource = useSource(
+    { onLoad, onLoadStart, onLoadEnd, onError },
+    source
+  );
   const availableSource = getSourceToDisplay(mainSource, fallbackSource);
   const displayImageUri = ImageLoader.resolveUri(availableSource.uri);
   const imageSizeStyle = resolveAssetDimensions(availableSource);
