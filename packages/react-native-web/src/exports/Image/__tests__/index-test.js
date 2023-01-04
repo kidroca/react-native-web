@@ -257,7 +257,7 @@ describe('components/Image', () => {
       expect(onLoadEndStub.mock.calls.length).toBe(1);
     });
 
-    // This test verifies that wen source is declared in-line and the parent component
+    // This test verifies that when source is declared in-line and the parent component
     // re-renders we aren't restarting the load process because the source is structurally equal
     test('is not called on update when "headers" and "uri" are not modified', () => {
       const onLoadStartStub = jest.fn();
@@ -451,7 +451,7 @@ describe('components/Image', () => {
       );
     });
 
-    // A common case is `source` declared as an inline object, which cause is to be a
+    // A common case is `source` declared as an inline object, which creates a
     // new object (with the same content) each time parent component renders
     test('it still loads the image if source object is changed', () => {
       ImageLoader.load.mockImplementation(() => {});

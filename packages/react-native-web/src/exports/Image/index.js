@@ -382,7 +382,7 @@ const useSource = (
   }, [source]);
 
   // Always use the latest value of any callback passed
-  // Keeping a ref we avoid (re)triggering the load effect just because a callback changed
+  // By keeping a ref, we avoid (re)triggering the load effect just because a callback changed
   // (E.g. we don't want to trigger a new load because the `onLoad` prop changed)
   const callbackRefs = React.useRef(callbacks);
   callbackRefs.current = callbacks;
@@ -425,7 +425,7 @@ const useSource = (
     setStatus(LOADING);
     const requestId = ImageLoader.load(resolvedSource, handleLoad, handleError);
 
-    // Release resources on umount or after starting a new request
+    // Release resources on unmount or after starting a new request
     return () => ImageLoader.release(requestId);
   }, [resolvedSource]);
 
