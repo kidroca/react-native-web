@@ -212,16 +212,12 @@ const Image: React.AbstractComponent<
     }
   }
 
-  // Don't raise load events from the fallback source
+  // Don't raise load events for the fallback source
   const fallbackSource = useSource({ onError }, defaultSource);
   const mainSource = useSource(
     { onLoad, onLoadStart, onLoadEnd, onError },
     source
   );
-  const availableSource = getSourceToDisplay(mainSource, fallbackSource);
-  const displayImageUri = ImageLoader.resolveUri(availableSource.uri);
-  const imageSizeStyle = resolveAssetDimensions(availableSource);
-
   const [layout, updateLayout] = React.useState({});
   const hasTextAncestor = React.useContext(TextAncestorContext);
   const hiddenImageRef = React.useRef(null);
@@ -232,6 +228,9 @@ const Image: React.AbstractComponent<
     filterRef.current
   );
   const resizeMode = props.resizeMode || _resizeMode || 'cover';
+  const availableSource = getSourceToDisplay(mainSource, fallbackSource);
+  const displayImageUri = ImageLoader.resolveUri(availableSource.uri);
+  const imageSizeStyle = resolveAssetDimensions(availableSource);
   const backgroundImage = displayImageUri ? `url("${displayImageUri}")` : null;
   const backgroundSize = getBackgroundSize();
 
