@@ -159,11 +159,6 @@ function resolveSource(source: ?Source): ImageSource {
   return resolvedSource;
 }
 
-// resolve any URI that might have a local blob URL created with `createObjectURL`
-function resolveBlobUri(source: ImageSource): string {
-  return ImageLoader.resolveBlobUri(source.uri);
-}
-
 function getSourceToDisplay(main: SourceState, fallback: SourceState) {
   if (main.status === LOADED) return main.source;
 
@@ -222,7 +217,7 @@ const Image: React.AbstractComponent<
   const fallbackSource = useSource(imageLoadingProps, defaultSource);
   const mainSource = useSource(imageLoadingProps, source);
   const availableSource = getSourceToDisplay(mainSource, fallbackSource);
-  const displayImageUri = resolveBlobUri(availableSource);
+  const displayImageUri = ImageLoader.resolveUri(availableSource.uri);
   const imageSizeStyle = resolveAssetDimensions(availableSource);
 
   const [layout, updateLayout] = React.useState({});
