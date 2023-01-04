@@ -109,9 +109,29 @@ function resolveSource(source: ?Source): ImageSource {
   let resolvedSource = { uri: '' };
 
   if (typeof source === 'number') {
-    resolvedSource = resolveNumericSource(source);
+    // get the URI from the packager
+    const asset = getAssetByID(source);
+    if (asset == null) {
+      throw new Error(
+        `Image: asset with ID "${source}" could not be found. Please check the image source or packager.`
+      );
+    }
+    let scale = asset.scales[0];
+    if (asset.scales.length > 1) {
+      const preferredScale = PixelRatio.get();
+      // Get the scale which is closest to the preferred scale
+      scale = asset.scales.reduce((prev, curr) =>
+        Math.abs(curr - preferredScale) < Math.abs(prev - preferredScale)
+          ? curr
+          : prev
+      );
+    }
+
+    const scaleSuffix = scale !== 1 ? `@${scale}x` : '';
+    const uri = `${asset.httpServerLocation}/${asset.name}${scaleSuffix}.${asset.type}`;
+    resolvedSource = { uri, width: asset.width, height: asset.height };
   } else if (typeof source === 'string') {
-    resolvedSource = resolveStringSource(source);
+    resolvedSource.uri = source;
   } else if (Array.isArray(source)) {
     if (process.env.NODE_ENV !== 'production') {
       console.warn(
@@ -122,65 +142,21 @@ function resolveSource(source: ?Source): ImageSource {
 
     return resolveSource(source[0]);
   } else if (source && typeof source.uri === 'string') {
-    resolvedSource = resolveObjectSource(source);
+    const { uri, width, height, headers } = source;
+    resolvedSource = { uri, width, height, headers };
   }
 
   if (resolvedSource.uri) {
     const match = resolvedSource.uri.match(svgDataUriPattern);
+    // inline SVG markup may contain characters (e.g., #, ") that need to be escaped
     if (match) {
-      resolvedSource = resolveSvgDataUriSource(resolvedSource, match);
+      const [, prefix, svg] = match;
+      const encodedSvg = encodeURIComponent(svg);
+      resolvedSource.uri = `${prefix}${encodedSvg}`;
     }
   }
 
   return resolvedSource;
-}
-
-// get the URI from the packager
-function resolveNumericSource(source: number): ImageSource {
-  const asset = getAssetByID(source);
-  if (asset == null) {
-    throw new Error(
-      `Image: asset with ID "${source}" could not be found. Please check the image source or packager.`
-    );
-  }
-  let scale = asset.scales[0];
-  if (asset.scales.length > 1) {
-    const preferredScale = PixelRatio.get();
-    // Get the scale which is closest to the preferred scale
-    scale = asset.scales.reduce((prev, curr) =>
-      Math.abs(curr - preferredScale) < Math.abs(prev - preferredScale)
-        ? curr
-        : prev
-    );
-  }
-
-  const scaleSuffix = scale !== 1 ? `@${scale}x` : '';
-  const uri = `${asset.httpServerLocation}/${asset.name}${scaleSuffix}.${asset.type}`;
-  const { height, width } = asset;
-
-  return { uri, height, width };
-}
-
-function resolveStringSource(source: string): ImageSource {
-  return { uri: source };
-}
-
-function resolveObjectSource(source: Object): ImageSource {
-  return (source: ImageSource);
-}
-
-function resolveSvgDataUriSource(
-  source: Object,
-  match: Array<string>
-): ImageSource {
-  const [, prefix, svg] = match;
-  // inline SVG markup may contain characters (e.g., #, ") that need to be escaped
-  const encodedSvg = encodeURIComponent(svg);
-
-  return {
-    ...source,
-    uri: `${prefix}${encodedSvg}`
-  };
 }
 
 // resolve any URI that might have a local blob URL created with `createObjectURL`
