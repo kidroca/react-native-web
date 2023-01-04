@@ -86,6 +86,7 @@ const ImageLoader = {
 
       image.onerror = null;
       image.onload = null;
+      // Setting image.src to empty string aborts any ongoing image loading
       image.src = '';
       ImageUriCache.remove(source.uri);
       delete requests[requestId];
@@ -157,7 +158,7 @@ const ImageLoader = {
     image.onload = handleLoad;
     requests[id] = { image, source };
 
-    // When headers are supplied we can't load the image through `image.src`, but we `fetch` it as an AJAX request
+    // It's not possible to use headers with `image.src`, that's why we use a different strategy for sources with headers
     if (source.headers) {
       const abortCtrl = new AbortController();
       const request = new Request(source.uri, {

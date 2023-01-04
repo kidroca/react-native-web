@@ -386,7 +386,8 @@ describe('components/Image', () => {
       );
 
       // Both defaultSource and source are loaded at the same time
-      // But we assume defaultSource is loaded quicker
+      // Since `defaultSource` is meant to be displayed until `source` loads
+      // we resolve it first (otherwise it won't be displayed at all)
       act(() => {
         const call = calls.find(({ source }) => source.uri === defaultUri);
         call.onLoad({ source: call.source });
