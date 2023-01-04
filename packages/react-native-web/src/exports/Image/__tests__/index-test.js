@@ -294,6 +294,33 @@ describe('components/Image', () => {
       expect(onLoadStub.mock.calls.length).toBe(1);
       expect(onLoadEndStub.mock.calls.length).toBe(1);
     });
+
+    test('is not called for default source', () => {
+      jest.useFakeTimers();
+      const onLoadStartStub = jest.fn();
+      const onLoadStub = jest.fn();
+      const onLoadEndStub = jest.fn();
+      render(
+        <Image
+          defaultSource="https://test.com/img-2.jpg"
+          onLoad={onLoadStub}
+          onLoadEnd={onLoadEndStub}
+          onLoadStart={onLoadStartStub}
+          source="https://test.com/img.jpg"
+        />
+      );
+      jest.runOnlyPendingTimers();
+      expect(onLoadStub).toHaveBeenCalledTimes(1);
+      expect(onLoadStub).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nativeEvent: {
+            source: {
+              uri: 'https://test.com/img.jpg'
+            }
+          }
+        })
+      );
+    });
   });
 
   describe('prop "resizeMode"', () => {
