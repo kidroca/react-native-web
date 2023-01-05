@@ -212,7 +212,7 @@ const ImageLoader = {
     });
     return Promise.resolve(result);
   },
-  // Resolves thr local blob for URIs loaded with `fetch`, otherwise just returns the URI
+  // Resolves the local blob for URIs loaded with `fetch`, otherwise just returns the URI
   resolveUri(uri: string): string {
     for (const key in requests) {
       const request = requests[key];
