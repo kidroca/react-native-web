@@ -7,17 +7,20 @@
  * @flow
  */
 
-import type { ImageSource, ImageResult } from './types';
-
 const dataUriPattern = /^data:/;
+
+export type ImageSource = {|
+  uri: string,
+  headers?: { [key: string]: string },
+  width?: ?number,
+  height?: ?number
+|};
 
 export class ImageUriCache {
   static _maximumEntries: number = 256;
   static _entries = {};
 
-  static has(uri: ?string): boolean {
-    if (uri == null) return false;
-
+  static has(uri: string): boolean {
     const entries = ImageUriCache._entries;
     const isDataUri = dataUriPattern.test(uri);
     return isDataUri || Boolean(entries[uri]);
@@ -78,18 +81,17 @@ let id = 0;
 const requests = {};
 
 const ImageLoader = {
-  release(requestId: number) {
-    const request = requests[requestId];
+  abort(requestId: number) {
+    const request = requests[`${requestId}`];
     if (request) {
-      const { image, cleanup, source } = request;
+      const { image, cleanup } = request;
       if (cleanup) cleanup();
 
       image.onerror = null;
       image.onload = null;
       // Setting image.src to empty string aborts any ongoing image loading
       image.src = '';
-      ImageUriCache.remove(source.uri);
-      delete requests[requestId];
+      delete requests[`${requestId}`];
     }
   },
   getSize(
@@ -102,16 +104,16 @@ const ImageLoader = {
     const requestId = ImageLoader.load({ uri }, callback, errorCallback);
 
     function callback() {
-      const { image } = requests[requestId] || {};
-      if (image) {
-        const { naturalHeight, naturalWidth } = image;
+      const request = requests[`${requestId}`];
+      if (request) {
+        const { naturalHeight, naturalWidth } = request.image;
         if (naturalHeight && naturalWidth) {
           success(naturalWidth, naturalHeight);
           complete = true;
         }
       }
       if (complete) {
-        ImageLoader.release(requestId);
+        ImageLoader.abort(requestId);
         clearInterval(interval);
       }
     }
@@ -120,25 +122,21 @@ const ImageLoader = {
       if (typeof failure === 'function') {
         failure();
       }
-      ImageLoader.release(requestId);
+      ImageLoader.abort(requestId);
       clearInterval(interval);
     }
   },
-  has(uri: ?string): boolean {
+  has(uri: string): boolean {
     return ImageUriCache.has(uri);
   },
-  load(
-    source: ImageSource,
-    onLoad: (ImageResult) => void,
-    onError: Function
-  ): number {
+  load(source: ImageSource, onLoad: Function, onError: Function): number {
     id += 1;
     const image = new window.Image();
 
-    const handleLoad = () => {
+    image.onerror = onError;
+    image.onload = () => {
       // avoid blocking the main thread
       const onDecode = () => {
-        ImageUriCache.add(source.uri);
         onLoad({
           source: {
             uri: image.src,
@@ -147,18 +145,21 @@ const ImageLoader = {
           }
         });
       };
-
       // Safari currently throws exceptions when decoding svgs.
       // We want to catch that error and allow the load handler
       // to be forwarded to the onLoad handler in this case
       image.decode().then(onDecode, onDecode);
     };
 
-    image.onerror = onError;
-    image.onload = handleLoad;
     requests[id] = { image, source };
 
-    // It's not possible to use headers with `image.src`, that's why we use a different strategy for sources with headers
+    // To load an image one of 2 available strategies is selected based on `source`
+    // When we've got a simple source that can be loaded using the builtin Image element
+    // we create an Image and use `src` and the `onload` attributes
+    // this covers many native cases like cross-origin requests, progressive images
+    // But the builtin Image is not capable of performing requests with headers
+    // That's why when the source has headers we use another strategy and make a `fetch` request
+    // Then we create a (local) object URL, so we can render the downloaded file as an Image
     if (source.headers) {
       const abortCtrl = new AbortController();
       const request = new Request(source.uri, {
@@ -211,20 +212,7 @@ const ImageLoader = {
       }
     });
     return Promise.resolve(result);
-  },
-  // Resolves the local blob for URIs loaded with `fetch`, otherwise just returns the URI
-  resolveUri(uri: string): string {
-    for (const key in requests) {
-      const request = requests[key];
-      if (request.source.uri === uri) {
-        return request.image.src;
-      }
-    }
-
-    return uri;
   }
 };
-
-export { ImageSource, ImageResult } from './types';
 
 export default ImageLoader;
