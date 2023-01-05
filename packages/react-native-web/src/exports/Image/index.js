@@ -8,13 +8,8 @@
  * @flow
  */
 
-import type { ImageResult, ImageSource } from '../../modules/ImageLoader';
-import type {
-  ImageLoadingProps,
-  ImageProps,
-  Source,
-  SourceState
-} from './types';
+import type { ImageSource } from '../../modules/ImageLoader';
+import type { ImageProps, Source } from './types';
 
 import * as React from 'react';
 import createElement from '../createElement';
@@ -100,11 +95,6 @@ function getFlatStyle(style, blurRadius, filterId) {
   return [flatStyle, resizeMode, _filter, tintColor];
 }
 
-function resolveAssetDimensions(source: ImageSource) {
-  const { height, width } = source;
-  return { height, width };
-}
-
 function resolveSource(source: ?Source): ImageSource {
   let resolvedSource = { uri: '' };
 
@@ -132,16 +122,8 @@ function resolveSource(source: ?Source): ImageSource {
     resolvedSource = { uri, width: asset.width, height: asset.height };
   } else if (typeof source === 'string') {
     resolvedSource.uri = source;
-  } else if (Array.isArray(source)) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.warn(
-        'The <Image> component does not support multiple sources passed as array, falling back to the first source in the list',
-        { source }
-      );
-    }
-
-    return resolveSource(source[0]);
   } else if (source && typeof source.uri === 'string') {
+    // $FlowFixMe
     const { uri, width, height, headers } = source;
     resolvedSource = { uri, width, height, headers };
   }
@@ -157,19 +139,6 @@ function resolveSource(source: ?Source): ImageSource {
   }
 
   return resolvedSource;
-}
-
-function getSourceToDisplay(main: SourceState, fallback: SourceState) {
-  if (main.status === LOADED) return main.source;
-
-  // If there's no fallback URI, it's safe to use the main source URI
-  if (main.status === LOADING && !fallback.source.uri) {
-    // But it should not be used when the image would be loaded with custom headers
-    // Because the actual URI is only set (as a local blob url) after loading
-    if (!main.source.headers) return main.source;
-  }
-
-  return fallback.source;
 }
 
 interface ImageStatics {
@@ -212,7 +181,9 @@ const Image: React.AbstractComponent<
     }
   }
 
-  // Don't raise load events for the fallback source
+  // Only the main source is supposed to trigger onLoad/start/end events
+  // It would be ambiguous to trigger the same `onLoad` event when default source loads
+  // That's why we don't pass `onLoad` props for the fallback source hook
   const fallbackSource = useSource({ onError }, defaultSource);
   const mainSource = useSource(
     { onLoad, onLoadStart, onLoadEnd, onError },
@@ -222,15 +193,17 @@ const Image: React.AbstractComponent<
   const hasTextAncestor = React.useContext(TextAncestorContext);
   const hiddenImageRef = React.useRef(null);
   const filterRef = React.useRef(_filterId++);
+  const shouldDisplaySource =
+    mainSource.status === LOADED ||
+    (mainSource.status === LOADING && defaultSource == null);
   const [flatStyle, _resizeMode, filter, tintColor] = getFlatStyle(
     style,
     blurRadius,
     filterRef.current
   );
   const resizeMode = props.resizeMode || _resizeMode || 'cover';
-  const availableSource = getSourceToDisplay(mainSource, fallbackSource);
-  const displayImageUri = ImageLoader.resolveUri(availableSource.uri);
-  const imageSizeStyle = resolveAssetDimensions(availableSource);
+  const selected = shouldDisplaySource ? mainSource : fallbackSource;
+  const displayImageUri = selected.source.uri;
   const backgroundImage = displayImageUri ? `url("${displayImageUri}")` : null;
   const backgroundSize = getBackgroundSize();
 
@@ -283,7 +256,7 @@ const Image: React.AbstractComponent<
       style={[
         styles.root,
         hasTextAncestor && styles.inline,
-        imageSizeStyle,
+        { width: selected.source.width, height: selected.source.height },
         flatStyle
       ]}
     >
@@ -326,10 +299,7 @@ ImageWithStatics.queryCache = function (uris) {
 /**
  * Image loading/state management hook
  */
-const useSource = (
-  callbacks: ImageLoadingProps,
-  source: ?Source
-): SourceState => {
+const useSource = (callbacks, source: ?Source) => {
   const [resolvedSource, setResolvedSource] = React.useState<ImageSource>(() =>
     resolveSource(source)
   );
@@ -369,8 +339,9 @@ const useSource = (
       return;
     }
 
+    // $FlowFixMe
     const { onLoad, onLoadStart, onLoadEnd, onError } = callbackRefs.current;
-    function handleLoad(result: ImageResult) {
+    function handleLoad(result) {
       if (onLoad) onLoad({ nativeEvent: result });
       if (onLoadEnd) onLoadEnd();
 
@@ -398,7 +369,7 @@ const useSource = (
     const requestId = ImageLoader.load(resolvedSource, handleLoad, handleError);
 
     // Release resources on unmount or after starting a new request
-    return () => ImageLoader.release(requestId);
+    return () => ImageLoader.abort(requestId);
   }, [resolvedSource]);
 
   return { status, source: result };

@@ -174,14 +174,12 @@ describe('components/Image', () => {
     });
 
     test('is called on update if "headers" are modified', () => {
-      const onLoadStartStub = jest.fn();
       const onLoadStub = jest.fn();
       const onLoadEndStub = jest.fn();
       const { rerender } = render(
         <Image
           onLoad={onLoadStub}
           onLoadEnd={onLoadEndStub}
-          onLoadStart={onLoadStartStub}
           source={{
             uri: 'https://test.com/img.jpg',
             headers: { 'x-custom-header': 'abc123' }
@@ -193,7 +191,6 @@ describe('components/Image', () => {
           <Image
             onLoad={onLoadStub}
             onLoadEnd={onLoadEndStub}
-            onLoadStart={onLoadStartStub}
             source={{
               uri: 'https://test.com/img.jpg',
               headers: { 'x-custom-header': '123abc' }
@@ -260,14 +257,12 @@ describe('components/Image', () => {
     // This test verifies that when source is declared in-line and the parent component
     // re-renders we aren't restarting the load process because the source is structurally equal
     test('is not called on update when "headers" and "uri" are not modified', () => {
-      const onLoadStartStub = jest.fn();
       const onLoadStub = jest.fn();
       const onLoadEndStub = jest.fn();
       const { rerender } = render(
         <Image
           onLoad={onLoadStub}
           onLoadEnd={onLoadEndStub}
-          onLoadStart={onLoadStartStub}
           source={{
             uri: 'https://test.com/img.jpg',
             width: 1,
@@ -281,7 +276,6 @@ describe('components/Image', () => {
           <Image
             onLoad={onLoadStub}
             onLoadEnd={onLoadEndStub}
-            onLoadStart={onLoadStartStub}
             source={{
               uri: 'https://test.com/img.jpg',
               width: 1,
@@ -297,15 +291,11 @@ describe('components/Image', () => {
 
     test('is not called for default source', () => {
       jest.useFakeTimers();
-      const onLoadStartStub = jest.fn();
       const onLoadStub = jest.fn();
-      const onLoadEndStub = jest.fn();
       render(
         <Image
           defaultSource="https://test.com/img-2.jpg"
           onLoad={onLoadStub}
-          onLoadEnd={onLoadEndStub}
-          onLoadStart={onLoadStartStub}
           source="https://test.com/img.jpg"
         />
       );
@@ -340,7 +330,6 @@ describe('components/Image', () => {
         null,
         '',
         {},
-        [],
         { uri: '' },
         { uri: 'https://google.com' },
         { uri: 'https://google.com', headers: { 'x-custom-header': 'abc123' } }
@@ -484,7 +473,7 @@ describe('components/Image', () => {
     test('it still loads the image if source object is changed', () => {
       ImageLoader.load.mockImplementation(() => {});
 
-      const releaseSpy = jest.spyOn(ImageLoader, 'release');
+      const releaseSpy = jest.spyOn(ImageLoader, 'abort');
 
       const uri = 'https://google.com/favicon.ico';
       const { rerender } = render(<Image source={{ uri }} />);

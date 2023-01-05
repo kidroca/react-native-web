@@ -8,7 +8,6 @@
  * @flow
  */
 
-import type { ImageResult, ImageSource } from '../../modules/ImageLoader';
 import type { ColorValue, GenericStyleProp } from '../../types';
 import type { ViewProps } from '../View/types';
 
@@ -103,26 +102,17 @@ export type ImageStyle = {
   tintColor?: ColorValue
 };
 
-export type SourceState = {
-  status: 'IDLE' | 'LOADING' | 'LOADED' | 'ERRORED',
-  source: ImageSource
-};
-
-export type ImageLoadingProps = {|
-  onLoad?: (e: { nativeEvent: ImageResult }) => void,
-  onLoadStart?: () => void,
-  onLoadEnd?: () => void,
-  onError?: ({ nativeEvent: { error: string } }) => void,
-  onProgress?: (e: any) => void
-|};
-
 export type ImageProps = {
-  ...$Exact<ViewProps>,
-  ...ImageLoadingProps,
+  ...ViewProps,
   blurRadius?: number,
   defaultSource?: Source,
   draggable?: boolean,
+  onError?: (e: any) => void,
   onLayout?: (e: any) => void,
+  onLoad?: (e: any) => void,
+  onLoadEnd?: (e: any) => void,
+  onLoadStart?: (e: any) => void,
+  onProgress?: (e: any) => void,
   resizeMode?: ResizeMode,
   source?: Source,
   style?: GenericStyleProp<ImageStyle>
