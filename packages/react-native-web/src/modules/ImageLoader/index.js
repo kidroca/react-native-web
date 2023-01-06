@@ -145,10 +145,14 @@ const ImageLoader = {
           }
         });
       };
-      // Safari currently throws exceptions when decoding svgs.
-      // We want to catch that error and allow the load handler
-      // to be forwarded to the onLoad handler in this case
-      image.decode().then(onDecode, onDecode);
+      if (typeof image.decode === 'function') {
+        // Safari currently throws exceptions when decoding svgs.
+        // We want to catch that error and allow the load handler
+        // to be forwarded to the onLoad handler in this case
+        image.decode().then(onDecode, onDecode);
+      } else {
+        setTimeout(onDecode, 0);
+      }
     };
 
     requests[id] = { image, source };
