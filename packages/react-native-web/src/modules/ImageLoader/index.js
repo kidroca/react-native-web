@@ -122,9 +122,17 @@ const ImageLoader = {
     id += 1;
     const image = new window.Image();
     image.onerror = onError;
-    image.onload = (e) => {
+    image.onload = (nativeEvent) => {
       // avoid blocking the main thread
-      const onDecode = () => onLoad({ nativeEvent: e });
+      const onDecode = () => {
+        nativeEvent.source = {
+          uri: image.src,
+          width: image.naturalWidth,
+          height: image.naturalHeight
+        };
+
+        onLoad({ nativeEvent });
+      };
       if (typeof image.decode === 'function') {
         // Safari currently throws exceptions when decoding svgs.
         // We want to catch that error and allow the load handler
