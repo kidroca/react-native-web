@@ -9,7 +9,7 @@
  */
 
 import type { ImageSource } from '../../modules/ImageLoader';
-import type { ImageProps, Source } from './types';
+import type { ImageProps, ImageLoadingProps, Source } from './types';
 
 import * as React from 'react';
 import createElement from '../createElement';
@@ -299,7 +299,7 @@ ImageWithStatics.queryCache = function (uris) {
 /**
  * Image loading/state management hook
  */
-const useSource = (callbacks, source: ?Source) => {
+const useSource = (callbacks: ImageLoadingProps, source: ?Source) => {
   const [resolvedSource, setResolvedSource] = React.useState<ImageSource>(() =>
     resolveSource(source)
   );
@@ -337,9 +337,8 @@ const useSource = (callbacks, source: ?Source) => {
       return;
     }
 
-    // $FlowFixMe
-    const { onLoad, onLoadStart, onLoadEnd, onError } = callbackRefs.current;
     function handleLoad(result) {
+      const { onLoad, onLoadEnd } = callbackRefs.current;
       if (onLoad) onLoad({ nativeEvent: result });
       if (onLoadEnd) onLoadEnd();
 
@@ -348,6 +347,7 @@ const useSource = (callbacks, source: ?Source) => {
     }
 
     function handleError() {
+      const { onLoadEnd, onError } = callbackRefs.current;
       if (onError) {
         onError({
           nativeEvent: {
@@ -361,6 +361,7 @@ const useSource = (callbacks, source: ?Source) => {
       setStatus(ERRORED);
     }
 
+    const { onLoadStart } = callbackRefs.current;
     if (onLoadStart) onLoadStart();
 
     setStatus(LOADING);
