@@ -314,7 +314,7 @@ const useSource = (callbacks, source: ?Source) => {
   React.useEffect(() => {
     const nextSource = resolveSource(source);
     setResolvedSource((prevSource) => {
-      // Prevent triggering a state change if the next is virtually the same as the last loaded source
+      // Prevent triggering a state change if the next is the same value as the last loaded source
       if (JSON.stringify(nextSource) === JSON.stringify(prevSource)) {
         return prevSource;
       }
@@ -330,8 +330,6 @@ const useSource = (callbacks, source: ?Source) => {
   callbackRefs.current = callbacks;
 
   // Start loading new source on resolved source change
-  // Beware of changing the hook inputs array - this effect relies on running only when the resolved source changes
-  // If you have to change the code, modify it in a way to preserve the intended behavior
   React.useEffect(() => {
     if (!resolvedSource.uri) {
       setStatus(IDLE);
