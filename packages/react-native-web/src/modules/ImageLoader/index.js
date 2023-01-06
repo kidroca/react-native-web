@@ -157,7 +157,7 @@ const ImageLoader = {
     // When we've got a simple source that can be loaded using the builtin Image element
     // we create an Image and use `src` and the `onload` attributes
     // this covers many native cases like cross-origin requests, progressive images
-    // But the builtin Image is not capable of performing requests with headers
+    // But the built-in Image is not capable of performing requests with headers
     // That's why when the source has headers we use another strategy and make a `fetch` request
     // Then we create a (local) object URL, so we can render the downloaded file as an Image
     if (source.headers) {
