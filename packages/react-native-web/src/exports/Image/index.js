@@ -337,13 +337,13 @@ const useSource = (callbacks: ImageLoadingProps, source: ?Source) => {
       return;
     }
 
-    function handleLoad(result) {
+    function handleLoad(nativeEvent) {
       const { onLoad, onLoadEnd } = callbackRefs.current;
-      if (onLoad) onLoad({ nativeEvent: result });
+      if (onLoad) onLoad({ nativeEvent });
       if (onLoadEnd) onLoadEnd();
 
       setStatus(LOADED);
-      setResult({ ...resolvedSource, ...result.source });
+      setResult({ ...resolvedSource, ...nativeEvent.source });
     }
 
     function handleError() {
