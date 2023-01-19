@@ -90,7 +90,7 @@ const ImageLoader = {
   ) {
     let complete = false;
     const interval = setInterval(callback, 16);
-    const requestId = ImageLoader.load(uri, callback, errorCallback);
+    const { requestId } = ImageLoader.load({ uri }, callback, errorCallback);
 
     function callback() {
       const image = requests[`${requestId}`];
@@ -118,7 +118,11 @@ const ImageLoader = {
   has(uri: string): boolean {
     return ImageUriCache.has(uri);
   },
-  load(uri: string, onLoad: Function, onError: Function): number {
+  load(
+    source: { uri: string },
+    onLoad: Function,
+    onError: Function
+  ): LoadRequest {
     id += 1;
     const image = new window.Image();
     image.onerror = onError;
@@ -142,14 +146,56 @@ const ImageLoader = {
         setTimeout(onDecode, 0);
       }
     };
-    image.src = uri;
+    image.src = source.uri;
     requests[`${id}`] = image;
-    return id;
+
+    return {
+      cancel: () => ImageLoader.abort(id),
+      requestId: id
+    };
+  },
+  loadWithHeaders(
+    source: ImageSource,
+    onLoad: Function,
+    onError: Function
+  ): LoadRequest {
+    let loadRequest: LoadRequest;
+    let uri: string;
+    const abortCtrl = new AbortController();
+    const request = new Request(source.uri, {
+      headers: source.headers,
+      signal: abortCtrl.signal
+    });
+    request.headers.append('accept', 'image/*');
+
+    fetch(request)
+      .then((response) => response.blob())
+      .then((blob) => {
+        uri = URL.createObjectURL(blob);
+        loadRequest = ImageLoader.load({ uri }, onLoad, onError);
+      })
+      .catch((error) => {
+        if (error.name !== 'AbortError' && onError) {
+          onError({ nativeEvent: error.message });
+        }
+      });
+
+    return {
+      get requestId() {
+        if (loadRequest) return loadRequest.requestId;
+        return -1;
+      },
+      cancel: () => {
+        abortCtrl.abort();
+        if (loadRequest) loadRequest.cancel();
+        URL.revokeObjectURL(uri);
+      }
+    };
   },
   prefetch(uri: string): Promise<void> {
     return new Promise((resolve, reject) => {
       ImageLoader.load(
-        uri,
+        { uri },
         () => {
           // Add the uri to the cache so it can be immediately displayed when used
           // but also immediately remove it to correctly reflect that it has no active references
@@ -170,6 +216,16 @@ const ImageLoader = {
     });
     return Promise.resolve(result);
   }
+};
+
+export type LoadRequest = {
+  cancel: Function,
+  requestId: number
+};
+
+type ImageSource = {
+  uri: string,
+  headers: { [key: string]: string }
 };
 
 export default ImageLoader;
