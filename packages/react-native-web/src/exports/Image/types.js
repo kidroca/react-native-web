@@ -20,7 +20,7 @@ import type {
   TransformStyles
 } from '../../types/styles';
 
-export type SourceObject = {
+type SourceObject = {
   /**
    * `body` is the HTTP body to send with the request. This must be a valid
    * UTF-8 string, and will be sent exactly as specified, with no
@@ -102,8 +102,8 @@ export type ImageStyle = {
   tintColor?: ColorValue
 };
 
-export type ImageProps = {|
-  ...$Exact<ViewProps>,
+export type ImageProps = {
+  ...ViewProps,
   blurRadius?: number,
   defaultSource?: Source,
   draggable?: boolean,
@@ -116,4 +116,4 @@ export type ImageProps = {|
   resizeMode?: ResizeMode,
   source?: Source,
   style?: GenericStyleProp<ImageStyle>
-|};
+};

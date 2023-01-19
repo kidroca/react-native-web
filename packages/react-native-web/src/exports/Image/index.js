@@ -8,7 +8,8 @@
  * @flow
  */
 
-import type { ImageProps, SourceObject } from './types';
+import type { LoadRequest } from '../../modules/ImageLoader';
+import type { ImageProps } from './types';
 
 import * as React from 'react';
 import createElement from '../createElement';
@@ -146,7 +147,7 @@ function resolveAssetUri(source): ?string {
   return uri;
 }
 
-function hasSourceDiff(a: SourceObject, b: SourceObject) {
+function hasSourceDiff(a, b) {
   return (
     a.uri !== b.uri || JSON.stringify(a.headers) !== JSON.stringify(b.headers)
   );
@@ -164,12 +165,10 @@ interface ImageStatics {
   ) => Promise<{| [uri: string]: 'disk/memory' |}>;
 }
 
-type ImageComponent = React.AbstractComponent<
+const Image: React.AbstractComponent<
   ImageProps,
   React.ElementRef<typeof View>
->;
-
-const BaseImage: ImageComponent = React.forwardRef((props, ref) => {
+> = React.forwardRef((props, ref) => {
   const {
     accessibilityLabel,
     blurRadius,
@@ -194,6 +193,7 @@ const BaseImage: ImageComponent = React.forwardRef((props, ref) => {
     }
   }
 
+  const lastLoadedSource = React.useRef({});
   const [state, updateState] = React.useState(() => {
     const uri = resolveAssetUri(source);
     if (uri != null) {
@@ -209,7 +209,10 @@ const BaseImage: ImageComponent = React.forwardRef((props, ref) => {
   const hasTextAncestor = React.useContext(TextAncestorContext);
   const hiddenImageRef = React.useRef(null);
   const filterRef = React.useRef(_filterId++);
-  const requestRef = React.useRef(null);
+  const requestRef = React.useRef<LoadRequest>({
+    cancel: () => {},
+    requestId: -1
+  });
   const shouldDisplaySource =
     state === LOADED || (state === LOADING && defaultSource == null);
   const [flatStyle, _resizeMode, filter, tintColor] = getFlatStyle(
@@ -266,16 +269,27 @@ const BaseImage: ImageComponent = React.forwardRef((props, ref) => {
   // Image loading
   const uri = resolveAssetUri(source);
   React.useEffect(() => {
-    abortPendingRequest();
-
     if (uri != null) {
+      const nextSource = {
+        // $FlowFixMe
+        headers: source.headers,
+        uri
+      };
+      if (!hasSourceDiff(nextSource, lastLoadedSource.current)) return;
+
+      requestRef.current.cancel();
       updateState(LOADING);
       if (onLoadStart) {
         onLoadStart();
       }
 
-      requestRef.current = ImageLoader.load(
-        uri,
+      const makeRequest = nextSource.headers
+        ? ImageLoader.loadWithHeaders
+        : ImageLoader.load;
+
+      requestRef.current = makeRequest(
+        // $FlowFixMe
+        nextSource,
         function load(e) {
           updateState(LOADED);
           if (onLoad) {
@@ -300,16 +314,10 @@ const BaseImage: ImageComponent = React.forwardRef((props, ref) => {
         }
       );
     }
-
-    function abortPendingRequest() {
-      if (requestRef.current != null) {
-        ImageLoader.abort(requestRef.current);
-        requestRef.current = null;
-      }
-    }
-
-    return abortPendingRequest;
   }, [uri, requestRef, updateState, onError, onLoad, onLoadEnd, onLoadStart]);
+
+  // Run the cleanup function on unmount
+  React.useEffect(() => requestRef.current.cancel, []);
 
   return (
     <View
@@ -340,94 +348,24 @@ const BaseImage: ImageComponent = React.forwardRef((props, ref) => {
   );
 });
 
-/**
- * This component handles specifically loading an image source with header
- */
-const ImageWithHeaders: ImageComponent = React.forwardRef((props, ref) => {
-  // $FlowIgnore
-  const nextSource: SourceObject = props.source;
-  const prevSource = React.useRef<SourceObject>({});
-  const cleanup = React.useRef<Function>(() => {});
-  const [blobUri, setBlobUri] = React.useState('');
-
-  const { onError, onLoadStart } = props;
-
-  React.useEffect(() => {
-    if (!hasSourceDiff(nextSource, prevSource.current)) return;
-
-    // When source changes we want to clean up any old/running requests
-    cleanup.current();
-
-    prevSource.current = nextSource;
-
-    let uri;
-    const abortCtrl = new AbortController();
-    const request = new Request(nextSource.uri, {
-      headers: nextSource.headers,
-      signal: abortCtrl.signal
-    });
-    request.headers.append('accept', 'image/*');
-
-    if (onLoadStart) onLoadStart();
-
-    fetch(request)
-      .then((response) => response.blob())
-      .then((blob) => {
-        uri = URL.createObjectURL(blob);
-        setBlobUri(uri);
-      })
-      .catch((error) => {
-        if (error.name !== 'AbortError' && onError) {
-          onError({ nativeEvent: error.message });
-        }
-      });
-
-    // Capture a cleanup function for the current request
-    // The reason for using a Ref is to avoid making this function a dependency
-    // Because the change of a dependency would otherwise would re-trigger a hook
-    cleanup.current = () => {
-      abortCtrl.abort();
-      setBlobUri('');
-      URL.revokeObjectURL(uri);
-    };
-  }, [nextSource, onLoadStart, onError]);
-
-  // Run the cleanup function on unmount
-  React.useEffect(() => cleanup.current, []);
-
-  const propsToPass = {
-    ...props,
-    // Omit `onLoadStart` because we trigger it in the current scope
-    onLoadStart: undefined,
-    // Until the current component resolves the request (using headers)
-    // we skip forwarding the source so the base component doesn't attempt
-    // to load the original source
-    source: blobUri ? { ...nextSource, uri: blobUri } : undefined
-  };
-
-  return <BaseImage ref={ref} {...propsToPass} />;
-});
-
-// $FlowIgnore: This is the correct type, but casting makes it unhappy since the variables aren't defined yet
-const Image: ImageComponent & ImageStatics = React.forwardRef((props, ref) => {
-  if (props.source && props.source.headers) {
-    return <ImageWithHeaders ref={ref} {...props} />;
-  }
-
-  return <BaseImage ref={ref} {...props} />;
-});
-
 Image.displayName = 'Image';
 
-Image.getSize = function (uri, success, failure) {
+// $FlowIgnore: This is the correct type, but casting makes it unhappy since the variables aren't defined yet
+const ImageWithStatics = (Image: React.AbstractComponent<
+  ImageProps,
+  React.ElementRef<typeof View>
+> &
+  ImageStatics);
+
+ImageWithStatics.getSize = function (uri, success, failure) {
   ImageLoader.getSize(uri, success, failure);
 };
 
-Image.prefetch = function (uri) {
+ImageWithStatics.prefetch = function (uri) {
   return ImageLoader.prefetch(uri);
 };
 
-Image.queryCache = function (uris) {
+ImageWithStatics.queryCache = function (uris) {
   return ImageLoader.queryCache(uris);
 };
 
@@ -483,4 +421,4 @@ const resizeModeStyles = StyleSheet.create({
   }
 });
 
-export default Image;
+export default ImageWithStatics;

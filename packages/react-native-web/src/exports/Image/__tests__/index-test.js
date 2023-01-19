@@ -20,6 +20,10 @@ const originalImage = window.Image;
 describe('components/Image', () => {
   beforeEach(() => {
     ImageUriCache._entries = {};
+    ImageLoader.load = jest.fn((_, onLoad, onError) => {
+      onLoad();
+      return { cancel: jest.fn() };
+    });
     window.Image = jest.fn(() => ({}));
   });
 
@@ -107,9 +111,6 @@ describe('components/Image', () => {
   describe('prop "onLoad"', () => {
     test('is called after image is loaded from network', () => {
       jest.useFakeTimers();
-      ImageLoader.load = jest.fn().mockImplementation((_, onLoad, onError) => {
-        onLoad();
-      });
       const onLoadStartStub = jest.fn();
       const onLoadStub = jest.fn();
       const onLoadEndStub = jest.fn();
@@ -127,9 +128,6 @@ describe('components/Image', () => {
 
     test('is called after image is loaded from cache', () => {
       jest.useFakeTimers();
-      ImageLoader.load = jest.fn().mockImplementation((_, onLoad, onError) => {
-        onLoad();
-      });
       const onLoadStartStub = jest.fn();
       const onLoadStub = jest.fn();
       const onLoadEndStub = jest.fn();
@@ -261,11 +259,6 @@ describe('components/Image', () => {
 
     test('is set immediately if the image was preloaded', () => {
       const uri = 'https://yahoo.com/favicon.ico';
-      ImageLoader.load = jest
-        .fn()
-        .mockImplementationOnce((_, onLoad, onError) => {
-          onLoad();
-        });
       return Image.prefetch(uri).then(() => {
         const source = { uri };
         const { container } = render(<Image source={source} />, {
@@ -313,6 +306,7 @@ describe('components/Image', () => {
         .fn()
         .mockImplementationOnce((_, onLoad, onError) => {
           loadCallback = onLoad;
+          return { cancel: jest.fn() };
         });
       const { container } = render(
         <Image defaultSource={{ uri: defaultUri }} source={{ uri }} />
