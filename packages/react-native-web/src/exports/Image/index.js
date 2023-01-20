@@ -8,7 +8,8 @@
  * @flow
  */
 
-import type { ImageProps } from './types';
+import type { ImageRequest } from '../../modules/ImageLoader';
+import type { ImageProps, SourceObject } from './types';
 
 import * as React from 'react';
 import createElement from '../createElement';
@@ -146,6 +147,111 @@ function resolveAssetUri(source): ?string {
   return uri;
 }
 
+function raiseOnErrorEvent(uri, { onError, onLoadEnd }) {
+  if (onError) {
+    onError({
+      nativeEvent: {
+        error: `Failed to load resource ${uri} (404)`
+      }
+    });
+  }
+  if (onLoadEnd) onLoadEnd();
+}
+function hasSourceDiff(
+  a: $PropertyType<ImageRequest, 'source'>,
+  b: SourceObject
+) {
+  if (a.uri !== b.uri) {
+    return true;
+  }
+
+  const headersA = a.headers || {};
+  const headersB = b.headers || {};
+
+  const keysUnion = new Set([
+    ...Object.keys(headersA),
+    ...Object.keys(headersB)
+  ]);
+
+  for (const key of keysUnion) {
+    if (headersA[key] !== headersB[key]) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * This hook prepares an uri we can render in the Image component
+ * The returned value is stable - it will only change if the input source change (structural/deep difference)
+ * Sources with headers are converted to local URIs using the ImageLoader
+ * @param source
+ * @param onLoadStart
+ * @param onError
+ * @param onLoadEnd
+ * @returns {string}
+ */
+const useImageUri = (source, { onLoadStart, onError, onLoadEnd }): string => {
+  const request = React.useRef<ImageRequest>({
+    promise: Promise.resolve(''),
+    cancel: () => {},
+    source: { uri: '', headers: {} }
+  });
+
+  const nextSource = React.useMemo<SourceObject>(() => {
+    const uri = resolveAssetUri(source) || '';
+    const result: SourceObject = { uri };
+
+    if (
+      typeof source === 'object' &&
+      !Array.isArray(source) &&
+      source.headers
+    ) {
+      result.headers = source.headers;
+    }
+
+    return result;
+  }, [source]);
+
+  const [resultUri, setResultUri] = React.useState(() => {
+    if (nextSource.headers) {
+      // Hide the initial value because we need to make a headers request to get it
+      return '';
+    }
+
+    return nextSource.uri;
+  });
+
+  React.useEffect(() => {
+    if (!nextSource.headers) {
+      setResultUri(nextSource.uri);
+      return;
+    }
+
+    if (!hasSourceDiff(request.current.source, nextSource)) return;
+
+    // When source changes we want to clean up any old/running requests
+    request.current.cancel();
+
+    if (onLoadStart) onLoadStart();
+
+    // $FlowFixMe
+    const nextRequest = ImageLoader.loadUsingHeaders(nextSource);
+    nextRequest.promise
+      .then(setResultUri)
+      .catch(() => raiseOnErrorEvent(nextSource.uri, { onError, onLoadEnd }));
+
+    // $FlowFixMe
+    request.current = nextRequest;
+  }, [nextSource, onError, onLoadEnd, onLoadStart]);
+
+  // Run the cleanup function on unmount
+  React.useEffect(() => request.current.cancel, []);
+
+  return resultUri;
+};
+
 interface ImageStatics {
   getSize: (
     uri: string,
@@ -256,11 +362,11 @@ const Image: React.AbstractComponent<
   }
 
   // Image loading
-  const uri = resolveAssetUri(source);
+  const uri = useImageUri(source, { onLoadStart, onLoadEnd, onError });
   React.useEffect(() => {
     abortPendingRequest();
 
-    if (uri != null) {
+    if (uri) {
       updateState(LOADING);
       if (onLoadStart) {
         onLoadStart();
@@ -279,16 +385,7 @@ const Image: React.AbstractComponent<
         },
         function error() {
           updateState(ERRORED);
-          if (onError) {
-            onError({
-              nativeEvent: {
-                error: `Failed to load resource ${uri} (404)`
-              }
-            });
-          }
-          if (onLoadEnd) {
-            onLoadEnd();
-          }
+          raiseOnErrorEvent(uri, { onError, onLoadEnd });
         }
       );
     }

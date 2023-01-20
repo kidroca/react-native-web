@@ -146,6 +146,41 @@ const ImageLoader = {
     requests[`${id}`] = image;
     return id;
   },
+  loadUsingHeaders(
+    source: $PropertyType<ImageRequest, 'source'>
+  ): ImageRequest {
+    let uri;
+    const abortCtrl = new AbortController();
+    const request = new Request(source.uri, {
+      headers: source.headers,
+      signal: abortCtrl.signal
+    });
+    request.headers.append('accept', 'image/*');
+
+    const promise = fetch(request)
+      .then((response) => response.blob())
+      .then((blob) => {
+        uri = URL.createObjectURL(blob);
+        return uri;
+      })
+      .catch((error) => {
+        if (error.name === 'AbortError') {
+          return '';
+        }
+
+        // Re-throw the Error when it's not due to cancellation/cleanup
+        throw error;
+      });
+
+    return {
+      source,
+      promise,
+      cancel() {
+        abortCtrl.abort();
+        URL.revokeObjectURL(uri);
+      }
+    };
+  },
   prefetch(uri: string): Promise<void> {
     return new Promise((resolve, reject) => {
       ImageLoader.load(
@@ -170,6 +205,14 @@ const ImageLoader = {
     });
     return Promise.resolve(result);
   }
+};
+
+export type ImageSource = { uri: string, headers: { [key: string]: string } };
+
+export type ImageRequest = {
+  source: ImageSource,
+  promise: Promise<string>,
+  cancel: Function
 };
 
 export default ImageLoader;

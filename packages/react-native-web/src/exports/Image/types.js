@@ -20,7 +20,7 @@ import type {
   TransformStyles
 } from '../../types/styles';
 
-type SourceObject = {
+export type SourceObject = {
   /**
    * `body` is the HTTP body to send with the request. This must be a valid
    * UTF-8 string, and will be sent exactly as specified, with no
