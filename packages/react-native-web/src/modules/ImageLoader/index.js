@@ -129,6 +129,7 @@ const ImageLoader = {
     image.onload = (nativeEvent) => {
       // avoid blocking the main thread
       const onDecode = () => {
+        // Append `source` to match RN's ImageLoadEvent interface
         nativeEvent.source = {
           uri: image.src,
           width: image.naturalWidth,
@@ -150,6 +151,7 @@ const ImageLoader = {
     requests[`${id}`] = image;
 
     return {
+      source,
       cancel: () => ImageLoader.abort(id),
       requestId: id
     };
@@ -176,11 +178,12 @@ const ImageLoader = {
       })
       .catch((error) => {
         if (error.name !== 'AbortError' && onError) {
-          onError({ nativeEvent: error.message });
+          onError(error);
         }
       });
 
     return {
+      source,
       get requestId() {
         if (loadRequest) return loadRequest.requestId;
         return -1;
@@ -218,10 +221,11 @@ const ImageLoader = {
   }
 };
 
-export type LoadRequest = {
-  cancel: Function,
-  requestId: number
-};
+export type LoadRequest = {|
+  requestId: number,
+  source: ImageSource | { uri: string },
+  cancel: Function
+|};
 
 type ImageSource = {
   uri: string,

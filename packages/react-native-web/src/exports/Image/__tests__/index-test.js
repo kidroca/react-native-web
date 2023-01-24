@@ -20,9 +20,9 @@ const originalImage = window.Image;
 describe('components/Image', () => {
   beforeEach(() => {
     ImageUriCache._entries = {};
-    ImageLoader.load = jest.fn((_, onLoad, onError) => {
+    ImageLoader.load = jest.fn((source, onLoad, onError) => {
       onLoad();
-      return { cancel: jest.fn() };
+      return { source, cancel: jest.fn() };
     });
     window.Image = jest.fn(() => ({}));
   });
@@ -304,9 +304,9 @@ describe('components/Image', () => {
       let loadCallback;
       ImageLoader.load = jest
         .fn()
-        .mockImplementationOnce((_, onLoad, onError) => {
+        .mockImplementationOnce((source, onLoad, onError) => {
           loadCallback = onLoad;
-          return { cancel: jest.fn() };
+          return { source, cancel: jest.fn() };
         });
       const { container } = render(
         <Image defaultSource={{ uri: defaultUri }} source={{ uri }} />

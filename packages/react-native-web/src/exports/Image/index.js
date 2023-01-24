@@ -148,9 +148,12 @@ function resolveAssetUri(source): ?string {
 }
 
 function hasSourceDiff(a, b) {
-  return (
-    a.uri !== b.uri || JSON.stringify(a.headers) !== JSON.stringify(b.headers)
-  );
+  if (a.uri !== b.uri) return true;
+
+  const headersA = a.headers || {};
+  const headersB = b.headers || {};
+
+  return JSON.stringify(headersA) !== JSON.stringify(headersB);
 }
 
 interface ImageStatics {
@@ -193,7 +196,6 @@ const Image: React.AbstractComponent<
     }
   }
 
-  const lastLoadedSource = React.useRef({});
   const [state, updateState] = React.useState(() => {
     const uri = resolveAssetUri(source);
     if (uri != null) {
@@ -210,6 +212,7 @@ const Image: React.AbstractComponent<
   const hiddenImageRef = React.useRef(null);
   const filterRef = React.useRef(_filterId++);
   const requestRef = React.useRef<LoadRequest>({
+    source: { uri: '' },
     cancel: () => {},
     requestId: -1
   });
@@ -270,12 +273,12 @@ const Image: React.AbstractComponent<
   const uri = resolveAssetUri(source);
   React.useEffect(() => {
     if (uri != null) {
-      const nextSource = {
-        // $FlowFixMe
-        headers: source.headers,
-        uri
-      };
-      if (!hasSourceDiff(nextSource, lastLoadedSource.current)) return;
+      const nextSource = { uri, headers: undefined };
+      if (source && source.headers != null) {
+        nextSource.headers = source.headers;
+      }
+
+      if (!hasSourceDiff(nextSource, requestRef.current.source)) return;
 
       requestRef.current.cancel();
       updateState(LOADING);
@@ -313,8 +316,11 @@ const Image: React.AbstractComponent<
           }
         }
       );
+    } else {
+      requestRef.current.source = { uri: '' };
+      requestRef.current.cancel();
     }
-  }, [uri, requestRef, updateState, onError, onLoad, onLoadEnd, onLoadStart]);
+  }, [uri, updateState, onError, onLoad, onLoadEnd, onLoadStart, source]);
 
   // Run the cleanup function on unmount
   React.useEffect(() => requestRef.current.cancel, []);
